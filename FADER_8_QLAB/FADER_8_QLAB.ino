@@ -199,9 +199,9 @@ void loop() {
         Udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE - 1);
         oscMsg.fill(packetBuffer, UDP_TX_PACKET_MAX_SIZE - 1);
       }
-      char addr[200];
-      oscMsg.getAddress(addr, 0);
-      Serial.println(addr);
+      //char addr[200];
+      //oscMsg.getAddress(addr, 0);
+      //Serial.println(addr);
       OSCHandler(oscMsg);
     }
   }
@@ -225,16 +225,18 @@ void loop() {
         //        Serial.print(previous[i]);
         //        Serial.print(" to ");
         //        Serial.println(getFaderValue(i));
+        target[i] = -1;
         mode[i] = TOUCH;
       }
-    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) >= 2) {
+    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) >= 5) {
       mode[i] = MOTOR;
     }
 
     if (mode[i] == TOUCH) {
       if (lastSentValue[i] == getFaderValue(i) && sinceMoved[i] > 900) {
         mode[i] = REST;
-      } else if (sinceSent[i] > 10 && lastSentValue[i] != getFaderValue(i)) {
+        target[i] = -1;
+      } else if (sinceSent[i] > 30 && lastSentValue[i] != getFaderValue(i)) {
         sinceMoved[i] = 0;
         sinceSent[i] = 0;
         lastSentValue[i] = getFaderValue(i);
@@ -270,12 +272,12 @@ void loop() {
       analogWrite(MOTOR_PINS_A[i], 255);
       analogWrite(MOTOR_PINS_B[i], 255);
     }
-    //    Serial.print(mode[i]);
-    //    Serial.print("\t");
+    //Serial.print(mode[i]);
+    //Serial.print("\t");
     previous[i] = getFaderValue(i);
 
   }
-  //  Serial.println("");
+  //Serial.println("");
 }
 
 
