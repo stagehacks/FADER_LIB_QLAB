@@ -31,7 +31,7 @@ int faderTrimBottom[8] = {17, 15, 15, 15, 15, 15, 15, 15}; // ADJUST THIS IF A F
 #define REST 0
 #define MOTOR 1
 #define TOUCH 2
-elapsedMillis sinceHeartbeat = 0;
+elapsedMillis sinceHeartbeat = -10000;
 elapsedMillis sinceBegin = 0;
 elapsedMillis sinceMoved[8];
 elapsedMillis sinceSent[8];
@@ -116,17 +116,26 @@ void OSCSliderLevelsReply(OSCMessage &msg) { //reply/cue_id/*/sliderLevels
     s = str.indexOf(",", s) + 1;
   }
   sinceOSCSliderLevelsReply = 0;
-  Serial.print(".");
+  //Serial.print(".");
   //Serial.println("");
 }
-elapsedMillis sinceOSCSliderLevels = 0;
-void OSCSliderLevels(OSCMessage &msg) { //update/workspace/*/cueList/*/playbackPosition
-  if (sinceOSCSliderLevels > 200) {
+void OSCSliderLevels(OSCMessage &msg) { //update/workspace/*/cue_id/*
+  if(msg.getType(0)!='s'){
     OSCMessage outMsg("/cue/playbackPosition/sliderLevels");
     Udp.beginPacket(DESTINATION_IP, DESTINATION_PORT);
     outMsg.send(Udp);
     Udp.endPacket();
-    sinceOSCSliderLevels = 0;
+  }else{
+    char param[37];
+    char str[] = "/cue_id/AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA/sliderLevels";
+    msg.getString(0, param, 37);
+    for(byte i=0; i<36; i++){
+      str[i+8] = param[i];
+    }
+    OSCMessage outMsg(str);
+    Udp.beginPacket(DESTINATION_IP, DESTINATION_PORT);
+    outMsg.send(Udp);
+    Udp.endPacket();
   }
 }
 void OSCworkspaces(OSCMessage &msg) { //reply/workspaces
@@ -151,7 +160,7 @@ void OSCworkspaces(OSCMessage &msg) { //reply/workspaces
 void OSCDashboard(OSCMessage &msg){ //update/workspace/*/dashboard/
   // if a dashboard update message arrives without a sliderLevels message recently,
   // we know a cue with no sliderLevels is selected, and should move the faders to 0
-  if(sinceOSCSliderLevelsReply>300){
+  if(sinceOSCSliderLevelsReply>100){
     for(byte i=0; i<8; i++){
       target[i] = 0;
     }
@@ -228,7 +237,7 @@ void loop() {
         target[i] = -1;
         mode[i] = TOUCH;
       }
-    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) >= 5) {
+    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) > 4) {
       mode[i] = MOTOR;
     }
 
