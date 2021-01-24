@@ -134,6 +134,7 @@ void OSCworkspaces(OSCMessage &msg) { //reply/workspaces
   msg.getString(0, param, 255);
   String str = String(param);
 
+  // ToDo: get updates for all workspaces, not just the first in the list
   int s = str.indexOf("uniqueID\":\"");
   int e = str.indexOf("\",\"", s);
   String workspace = str.substring(s + 11, e);
