@@ -21,22 +21,30 @@ IPAddress DESTINATION_IP(192, 168, 1, 120);
 #define DESTINATION_PORT 53000
 
 // FADER TRIM SETTINGS
-int faderTrimTop[8] = {232, 235, 235, 235, 235, 235, 235, 235}; // ADJUST THIS IF A FADER ISN'T READING 127 AT THE TOP OF ITS TRAVEL
-int faderTrimBottom[8] = {17, 15, 15, 15, 15, 15, 15, 15}; // ADJUST THIS IF A FADER ISN'T READING 0 AT THE BOTTOM OF ITS TRAVEL
+#define TOP 960
+#define BOT 70
+int faderTrimTop[8] = {TOP, TOP, TOP, TOP, TOP, TOP, TOP, TOP}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 255 AT THE TOP OF ITS TRAVEL
+int faderTrimBottom[8] = {BOT, BOT, BOT, BOT, BOT, BOT, BOT, BOT}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 0 AT THE BOTTOM OF ITS TRAVEL
+
+#define HEARTBEAT_INTERVAL 10
+#define MOTOR_MIN_SPEED 180
+#define MOTOR_MAX_SPEED 250
+#define TOUCH_THRESHOLD 30
+
+#define QLAB_MIN_VOLUME -60
+#define QLAB_MAX_VOLUME 12
+
+#define DEBUG false
 
 
 
 
-
-#define REST 0
-#define MOTOR 1
-#define TOUCH 2
 elapsedMillis sinceHeartbeat = -10000;
 elapsedMillis sinceBegin = 0;
 elapsedMillis sinceMoved[8];
 elapsedMillis sinceSent[8];
 byte lastSentValue[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-byte mode[8] = {MOTOR, MOTOR, MOTOR, MOTOR, MOTOR, MOTOR, MOTOR, MOTOR};
+byte mode[8] = {1, 1, 1, 1, 1, 1, 1, 1};
 int target[8] = {128, 128, 128, 128, 128, 128, 128, 128};
 int previous[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 EthernetUDP Udp;
@@ -69,7 +77,7 @@ ResponsiveAnalogRead faders[8] = {
 
 void faderHasMoved(byte i) {
   if (ethernetStatus != 0) {
-    float faderValueLog = getFaderValueLogarithmic(getFaderValue(i), -60, 12);
+    float faderValueLog = getFaderValueLogarithmic(getFaderValue(i), QLAB_MIN_VOLUME, QLAB_MAX_VOLUME);
     char addr[] = "/cue/selected/level/0/x";
     addr[22] = i + 48;
     OSCMessage msg(addr);
@@ -82,6 +90,103 @@ void faderHasMoved(byte i) {
 }
 
 
+
+//    __  __          _____ _   _   _      ____   ____  _____  
+//   |  \/  |   /\   |_   _| \ | | | |    / __ \ / __ \|  __ \.
+//   | \  / |  /  \    | | |  \| | | |   | |  | | |  | | |__) |
+//   | |\/| | / /\ \   | | | . ` | | |   | |  | | |  | |  ___/.
+//   | |  | |/ ____ \ _| |_| |\  | | |___| |__| | |__| | |     
+//   |_|  |_/_/    \_\_____|_| \_| |______\____/ \____/|_|     
+
+#define REST 0
+#define MOTOR 1
+#define TOUCH 2
+void loop() {
+  if (ethernetStatus != 0) {
+    if (sinceHeartbeat > HEARTBEAT_INTERVAL*1000) {
+      sinceHeartbeat = 0;
+      heartbeat();
+    }
+    packetSize = Udp.parsePacket();
+    OSCMessage oscMsg;
+    if (packetSize) {
+      for (int j = 0; j < packetSize; j += UDP_TX_PACKET_MAX_SIZE - 1) {
+        Udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE - 1);
+        oscMsg.fill(packetBuffer, UDP_TX_PACKET_MAX_SIZE - 1);
+      }
+      OSCHandler(oscMsg);
+    }
+  }
+
+  for (byte i = 0; i < 8; i++) {
+    faders[i].update();
+    int distanceFromTarget = target[i] - getFaderValue(i);
+    
+    if (faders[i].hasChanged()) {
+      sinceMoved[i] = 0;
+      if (mode[i] != MOTOR && previous[i] - getFaderValue(i) != 0) {
+        target[i] = -1;
+        mode[i] = TOUCH;
+      }
+    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) > 4) {
+      mode[i] = MOTOR;
+    }
+
+    if (mode[i] == TOUCH) {
+      if (lastSentValue[i] == getFaderValue(i) && sinceMoved[i] > 900) {
+        mode[i] = REST;
+        target[i] = -1;
+      } else if (sinceSent[i] > 30 && lastSentValue[i] != getFaderValue(i)) {
+        sinceMoved[i] = 0;
+        sinceSent[i] = 0;
+        lastSentValue[i] = getFaderValue(i);
+        faderHasMoved(i);
+      }
+    }
+
+    if (mode[i] == MOTOR) {
+      faders[i].disableSleep();
+      byte motorSpeed = min(MOTOR_MAX_SPEED, MOTOR_MIN_SPEED + abs(distanceFromTarget / 4));
+
+      if (abs(distanceFromTarget) < 2) {
+        analogWrite(MOTOR_PINS_A[i], 255);
+        analogWrite(MOTOR_PINS_B[i], 255);
+        if (sinceMoved[i] > 10) {
+          faders[i].enableSleep();
+        }
+        if (sinceMoved[i] > 200) {
+          mode[i] = REST;
+          target[i] = -1;
+        }
+      } else if (distanceFromTarget > 0) {
+        sinceMoved[i] = 0;
+        analogWrite(MOTOR_PINS_A[i], motorSpeed);
+        analogWrite(MOTOR_PINS_B[i], 0);
+      } else if (distanceFromTarget < 0) {
+        sinceMoved[i] = 0;
+        analogWrite(MOTOR_PINS_A[i], 0);
+        analogWrite(MOTOR_PINS_B[i], motorSpeed);
+      }
+      
+    } else {
+      faders[i].enableSleep();
+      analogWrite(MOTOR_PINS_A[i], 255);
+      analogWrite(MOTOR_PINS_B[i], 255);
+    }
+    if(DEBUG){
+      Serial.print(getFaderValue(i));
+      Serial.print("\t");
+    }
+    previous[i] = getFaderValue(i);
+
+  }
+  if(DEBUG){
+    Serial.println("");
+  }
+}
+
+
+
 //     ____   _____  _____ 
 //    / __ \ / ____|/ ____|
 //   | |  | | (___ | |     
@@ -90,10 +195,10 @@ void faderHasMoved(byte i) {
 //    \____/|_____/ \_____|
 
 void OSCHandler(OSCMessage &msg) {
-  msg.dispatch("/reply/workspaces", OSCworkspaces);
+  msg.dispatch("/reply/workspaces", OSCReplyWorkspaces);
   msg.dispatch("/update/workspace/*/cueList/*/playbackPosition", OSCSliderLevels);
-  msg.dispatch("/update/workspace/*/dashboard", OSCDashboard);
   msg.dispatch("/update/workspace/*/cue_id/*", OSCSliderLevels);
+  msg.dispatch("/update/workspace/*/dashboard", OSCDashboard);
   msg.dispatch("/reply/cue_id/*/sliderLevels", OSCSliderLevelsReply);
 }
 elapsedMillis sinceOSCSliderLevelsReply = 0;
@@ -105,19 +210,11 @@ void OSCSliderLevelsReply(OSCMessage &msg) { //reply/cue_id/*/sliderLevels
   int s = str.indexOf("\"data\":[") + 8;
   for (byte i = 0; i < 8; i++) {
     int val = str.substring(s, str.indexOf(",", s)).toInt();
-    float mapped = setFaderValueLogarithmic(val, -60, 12);
-
-    //    Serial.print(i);
-    //    Serial.print(" =>");
-    //    Serial.print(val);
-    //    Serial.print("  ");
-
+    float mapped = setFaderValueLogarithmic(val, QLAB_MIN_VOLUME, QLAB_MAX_VOLUME);
     target[i] = mapped;
     s = str.indexOf(",", s) + 1;
   }
   sinceOSCSliderLevelsReply = 0;
-  //Serial.print(".");
-  //Serial.println("");
 }
 void OSCSliderLevels(OSCMessage &msg) { //update/workspace/*/cue_id/*
   if(msg.getType(0)!='s'){
@@ -138,7 +235,7 @@ void OSCSliderLevels(OSCMessage &msg) { //update/workspace/*/cue_id/*
     Udp.endPacket();
   }
 }
-void OSCworkspaces(OSCMessage &msg) { //reply/workspaces
+void OSCReplyWorkspaces(OSCMessage &msg) { //reply/workspaces
   char param[255];
   msg.getString(0, param, 255);
   String str = String(param);
@@ -166,6 +263,7 @@ void OSCDashboard(OSCMessage &msg){ //update/workspace/*/dashboard/
     }
   }
 }
+
 void heartbeat() {
   OSCMessage msg("/workspaces");
   Udp.beginPacket(DESTINATION_IP, DESTINATION_PORT);
@@ -175,127 +273,18 @@ void heartbeat() {
 
 
 
-//     _____ ______ _______ _    _ _____  
-//    / ____|  ____|__   __| |  | |  __ \.
-//   | (___ | |__     | |  | |  | | |__) |
-//    \___ \|  __|    | |  | |  | |  ___/. 
-//    ____) | |____   | |  | |__| | |     
-//   |_____/|______|  |_|   \____/|_|     
-
-void setup() {
-  Serial.begin(9600);
-  delay(1500);
-  mainInit();
-}
-
-//    __  __          _____ _   _   _      ____   ____  _____  
-//   |  \/  |   /\   |_   _| \ | | | |    / __ \ / __ \|  __ \.
-//   | \  / |  /  \    | | |  \| | | |   | |  | | |  | | |__) |
-//   | |\/| | / /\ \   | | | . ` | | |   | |  | | |  | |  ___/.
-//   | |  | |/ ____ \ _| |_| |\  | | |___| |__| | |__| | |     
-//   |_|  |_/_/    \_\_____|_| \_| |______\____/ \____/|_|     
-
-void loop() {
-  if (ethernetStatus != 0) {
-    if (sinceHeartbeat > 10000) {
-      sinceHeartbeat = 0;
-      heartbeat();
-    }
-    packetSize = Udp.parsePacket();
-    OSCMessage oscMsg;
-    if (packetSize) {
-      for (int j = 0; j < packetSize; j += UDP_TX_PACKET_MAX_SIZE - 1) {
-        Udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE - 1);
-        oscMsg.fill(packetBuffer, UDP_TX_PACKET_MAX_SIZE - 1);
-      }
-      //char addr[200];
-      //oscMsg.getAddress(addr, 0);
-      //Serial.println(addr);
-      OSCHandler(oscMsg);
-    }
-  }
-
-  if (sinceBegin > 3000 && sinceBegin < 3100) {
-    Serial.println("###############################");
-    sinceBegin = 3100;
-  } else if (sinceBegin < 3000) {
-    return;
-  }
-
-  for (byte i = 0; i < 8; i++) {
-    faders[i].update();
-    int distanceFromTarget = target[i] - getFaderValue(i);
-    
-    if (faders[i].hasChanged()) {
-      sinceMoved[i] = 0;
-      if (mode[i] != MOTOR && previous[i] - getFaderValue(i) != 0) {
-        //        Serial.print(i);
-        //        Serial.print(" changed from ");
-        //        Serial.print(previous[i]);
-        //        Serial.print(" to ");
-        //        Serial.println(getFaderValue(i));
-        target[i] = -1;
-        mode[i] = TOUCH;
-      }
-    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) > 4) {
-      mode[i] = MOTOR;
-    }
-
-    if (mode[i] == TOUCH) {
-      if (lastSentValue[i] == getFaderValue(i) && sinceMoved[i] > 900) {
-        mode[i] = REST;
-        target[i] = -1;
-      } else if (sinceSent[i] > 30 && lastSentValue[i] != getFaderValue(i)) {
-        sinceMoved[i] = 0;
-        sinceSent[i] = 0;
-        lastSentValue[i] = getFaderValue(i);
-        faderHasMoved(i);
-      }
-    }
-
-    if (mode[i] == MOTOR) {
-      faders[i].disableSleep();
-      byte motorSpeed = min(215, 190 + abs(distanceFromTarget / 2));
-
-      if (abs(distanceFromTarget) < 2) {
-        analogWrite(MOTOR_PINS_A[i], 255);
-        analogWrite(MOTOR_PINS_B[i], 255);
-        if (sinceMoved[i] > 10) {
-          faders[i].enableSleep();
-        }
-        if (sinceMoved[i] > 200) {
-          mode[i] = REST;
-          target[i] = -1;
-        }
-      } else if (distanceFromTarget > 0) {
-        sinceMoved[i] = 0;
-        analogWrite(MOTOR_PINS_A[i], motorSpeed);
-        analogWrite(MOTOR_PINS_B[i], 0);
-      } else if (distanceFromTarget < 0) {
-        sinceMoved[i] = 0;
-        analogWrite(MOTOR_PINS_A[i], 0);
-        analogWrite(MOTOR_PINS_B[i], motorSpeed);
-      }
-    } else {
-      faders[i].enableSleep();
-      analogWrite(MOTOR_PINS_A[i], 255);
-      analogWrite(MOTOR_PINS_B[i], 255);
-    }
-    //Serial.print(mode[i]);
-    //Serial.print("\t");
-    previous[i] = getFaderValue(i);
-
-  }
-  //Serial.println("");
-}
-
-
 //    _____ _   _ _____ _______ 
 //   |_   _| \ | |_   _|__   __|
 //     | | |  \| | | |    | |   
 //     | | | . ` | | |    | |   
 //    _| |_| |\  |_| |_   | |   
 //   |_____|_| \_|_____|  |_|   
+
+void setup() {
+  Serial.begin(9600);
+  delay(1500);
+  mainInit();
+}
 
 byte networkThreadID = 0;
 void mainInit() {
@@ -309,12 +298,8 @@ void mainInit() {
     digitalWrite(MOTOR_PINS_B[i], LOW);
     analogWriteFrequency(MOTOR_PINS_A[i], 18000);
     analogWriteFrequency(MOTOR_PINS_B[i], 18000);
-
-    faders[i].setAnalogResolution(256);
-    faders[i].setSnapMultiplier(0.1);
-    faders[i].setActivityThreshold(3);
+    faders[i].setActivityThreshold(TOUCH_THRESHOLD);
   }
-  analogReadResolution(8);
   Serial.println("Starting Network Thread...");
   networkThreadID = threads.addThread(networkInit);
 }
@@ -351,9 +336,6 @@ void networkInit() {
 
 int getFaderValue(byte fader) {
   return max(0, min(255, map(faders[fader].getValue(), faderTrimBottom[fader], faderTrimTop[fader], 0, 255)));
-}
-int getRawFaderValue(byte fader) {
-  return map(analogRead(readPins[fader]), faderTrimBottom[fader], faderTrimTop[fader], 0, 255);
 }
 float getFaderValueLogarithmic(int val, int low, int high) {
   return max(low, min(high, map(pow(val / 255.0, 0.6666), 0, 1, low, high)));
