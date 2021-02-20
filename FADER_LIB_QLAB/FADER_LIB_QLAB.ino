@@ -5,12 +5,6 @@
 #include <OSCBundle.h>
 #include <TeensyThreads.h>
 
-//     _____ ______ _______ _______ _____ _   _  _____  _____ 
-//    / ____|  ____|__   __|__   __|_   _| \ | |/ ____|/ ____|
-//   | (___ | |__     | |     | |    | | |  \| | |  __| (___  
-//    \___ \|  __|    | |     | |    | | | . ` | | |_ |\___ \.
-//    ____) | |____   | |     | |   _| |_| |\  | |__| |____) |
-//   |_____/|______|  |_|     |_|  |_____|_| \_|\_____|_____/.
 
 byte MAC_ADDRESS[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
@@ -19,6 +13,7 @@ IPAddress SELF_IP(192, 168, 1, 130);
 
 IPAddress DESTINATION_IP(192, 168, 1, 120);
 #define DESTINATION_PORT 53000
+
 
 // FADER TRIM SETTINGS
 #define TOP 960
@@ -30,6 +25,7 @@ int faderTrimBottom[8] = {BOT, BOT, BOT, BOT, BOT, BOT, BOT, BOT}; // ADJUST THI
 #define MOTOR_MIN_SPEED 180
 #define MOTOR_MAX_SPEED 250
 #define TOUCH_THRESHOLD 30
+
 
 #define QLAB_MIN_VOLUME -60
 #define QLAB_MAX_VOLUME 12
