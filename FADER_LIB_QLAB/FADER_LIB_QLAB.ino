@@ -199,8 +199,8 @@ void OSCHandler(OSCMessage &msg) {
 }
 elapsedMillis sinceOSCSliderLevelsReply = 0;
 void OSCSliderLevelsReply(OSCMessage &msg) { //reply/cue_id/*/sliderLevels
-  char param[512];
-  msg.getString(0, param, 512);
+  char param[800]; // this is big because QLab sends floats sometimes for Slider Levels, 20+ char per slider
+  msg.getString(0, param, 800);
   String str = String(param);
 
   int s = str.indexOf("\"data\":[") + 8;
