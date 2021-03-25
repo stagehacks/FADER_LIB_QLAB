@@ -62,6 +62,9 @@ void ethernetSetup(){
 }
 
 void faderHasMoved(byte i) {
+  Serial.print("Fader ");
+  Serial.print(i);
+  Serial.println(" has been moved.");
   if (getEthernetStatus() != 0) {
     float faderValueLog = getFaderValueLogarithmic(getFaderValue(i), QLAB_MIN_VOLUME, QLAB_MAX_VOLUME);
     char addr[] = "/cue/selected/level/0/x";
@@ -88,6 +91,7 @@ void OSCSliderLevelsReply(OSCMessage &msg) { //reply/cue_id/*/sliderLevels
   char param[800]; // this is big because QLab sends floats sometimes for Slider Levels, 20+ char per slider
   msg.getString(0, param, 800);
   String str = String(param);
+  Serial.println("Playback Position changed");
 
   int s = str.indexOf("\"data\":[") + 8;
   for (byte i = 0; i < 8; i++) {
