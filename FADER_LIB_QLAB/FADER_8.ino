@@ -1,4 +1,4 @@
-// FADER_8 VERSION 1.0
+// FADER_8 VERSION 1.1
 
 // Ensure Board Type (Tools > Board Type) is set to Teensyduino Teensy 4.1
 #include <TeensyThreads.h>
@@ -8,14 +8,16 @@
 #define REST 0
 #define MOTOR 1
 #define TOUCH 2
+#define RANGE 512
 
 elapsedMillis sinceBegin = 0;
 elapsedMillis sinceMoved[8];
 elapsedMillis sinceSent[8];
-byte lastSentValue[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+int lastSentValue[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 int target[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte mode[8] = {1, 1, 1, 1, 1, 1, 1, 1};
 int previous[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+byte minMotorPower[8] = {170, 170, 170, 170, 170, 170, 170, 170};
 byte readPins[8] = {A9, A8, A7, A6, A5, A4, A3, A2};
 static byte MOTOR_PINS_A[8] = {0, 2, 4, 6, 8, 10, 24, 28};
 static byte MOTOR_PINS_B[8] = {1, 3, 5, 7, 9, 12, 25, 29};
@@ -34,7 +36,7 @@ ResponsiveAnalogRead faders[8] = {
 void faderLoop(){
   for (byte i = 0; i < 8; i++) {
     faders[i].update();
-    int distanceFromTarget = target[i] - getFaderValue(i);
+    int distanceFromTarget = target[i] - getUnsafeFaderValue(i);
 
     if (faders[i].hasChanged()) {
       sinceMoved[i] = 0;
@@ -42,7 +44,7 @@ void faderLoop(){
         target[i] = -1;
         mode[i] = TOUCH;
       }
-    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) > 4) {
+    } else if (mode[i] == REST && target[i] != -1 && abs(distanceFromTarget) >= RANGE/64) {
       mode[i] = MOTOR;
     }
 
@@ -55,14 +57,15 @@ void faderLoop(){
         sinceSent[i] = 0;
         lastSentValue[i] = getFaderValue(i);
         faderHasMoved(i);
+        
       }
     }
 
     if (mode[i] == MOTOR) {
       faders[i].disableSleep();
-      byte motorSpeed = min(MOTOR_MAX_SPEED, MOTOR_MIN_SPEED + abs(distanceFromTarget / 4));
+      byte motorSpeed =  min(MOTOR_MAX_SPEED, minMotorPower[i] + abs(distanceFromTarget / (RANGE/32)));
 
-      if (abs(distanceFromTarget) < 2) {
+      if (abs(distanceFromTarget) < RANGE/64) {
         analogWrite(MOTOR_PINS_A[i], 255);
         analogWrite(MOTOR_PINS_B[i], 255);
         if (sinceMoved[i] > 10) {
@@ -88,6 +91,14 @@ void faderLoop(){
       analogWrite(MOTOR_PINS_B[i], 255);
     }
     if (DEBUG) {
+      if(mode[i]==MOTOR){
+        Serial.print("M");
+      }else if(mode[i]==TOUCH){
+        Serial.print("T");
+      }else if(mode[i]==REST){
+        Serial.print(" ");
+      }
+      Serial.print("-");
       Serial.print(getFaderValue(i));
       Serial.print("\t");
     }
@@ -101,12 +112,7 @@ void faderLoop(){
 
 byte networkThreadID = 0;
 void faderSetup() {
-  if(DEBUG){
-    delay(2000);
-  }
-  Serial.println("########  FADER_8  ########");
-  Serial.println("Setting up Faders...");
-
+  
   for (byte i = 0; i < 8; i++) {
     pinMode(MOTOR_PINS_A[i], OUTPUT);
     pinMode(MOTOR_PINS_B[i], OUTPUT);
@@ -116,6 +122,37 @@ void faderSetup() {
     analogWriteFrequency(MOTOR_PINS_B[i], 18000);
     faders[i].setActivityThreshold(TOUCH_THRESHOLD);
   }
+  
+  delay(2000);
+  
+  Serial.println("########  FADER_8  ########");
+  Serial.println("Calibrating Faders...");
+
+  for(byte i=0; i<8; i++){
+    faders[i].disableSleep();
+    faders[i].update();
+    int initial = getFaderValue(i);
+    
+    while(abs(getFaderValue(i)-initial)<RANGE/64){
+      faders[i].update();
+      minMotorPower[i]++;
+      if(initial<RANGE/2){
+        analogWrite(MOTOR_PINS_A[i], minMotorPower[i]);
+        analogWrite(MOTOR_PINS_B[i], 0);
+      }else{
+        analogWrite(MOTOR_PINS_A[i], 0);
+        analogWrite(MOTOR_PINS_B[i], minMotorPower[i]);
+      }
+      
+      delay(10);
+    }
+    faders[i].enableSleep();
+    analogWrite(MOTOR_PINS_A[i], 0);
+    analogWrite(MOTOR_PINS_B[i], 0);
+    Serial.print(minMotorPower[i]);
+    Serial.print(",");
+  }
+  Serial.println("");
   
   Serial.println("Starting Network Thread...");
   networkThreadID = threads.addThread(networkInit);
@@ -149,7 +186,7 @@ void networkInit() {
 }
 
 
-void setFaderTarget(byte fader, byte value){
+void setFaderTarget(byte fader, int value){
   target[fader] = value;
 }
 
@@ -158,5 +195,8 @@ byte getEthernetStatus(){
 }
 
 int getFaderValue(byte fader) {
-  return max(0, min(255, map(faders[fader].getValue(), faderTrimBottom[fader], faderTrimTop[fader], 0, 255)));
+  return max(0, min(RANGE-1, map(faders[fader].getValue(), faderTrimBottom[fader], faderTrimTop[fader], 0, RANGE-1)));
+}
+int getUnsafeFaderValue(byte fader){
+  return map(faders[fader].getValue(), faderTrimBottom[fader], faderTrimTop[fader], 0, RANGE-1);
 }

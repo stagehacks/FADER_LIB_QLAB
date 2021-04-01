@@ -1,12 +1,11 @@
 // FADER TRIM SETTINGS
 #define TOP 960
 #define BOT 70
-int faderTrimTop[8] = {TOP, TOP, TOP, TOP, TOP, TOP, TOP, TOP}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 255 AT THE TOP OF ITS TRAVEL
+int faderTrimTop[8] = {TOP, TOP, TOP, TOP, TOP, TOP, TOP, TOP}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 511 AT THE TOP OF ITS TRAVEL
 int faderTrimBottom[8] = {BOT, BOT, BOT, BOT, BOT, BOT, BOT, BOT}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 0 AT THE BOTTOM OF ITS TRAVEL
 
 // MOTOR SETTINGS
-#define MOTOR_MIN_SPEED 180
-#define MOTOR_MAX_SPEED 255
+#define MOTOR_MAX_SPEED 210
 #define TOUCH_THRESHOLD 16
 
 // ETHERNET SETTINGS
@@ -159,8 +158,8 @@ void heartbeat() {
 }
 
 float getFaderValueLogarithmic(int val, int low, int high) {
-  return max(low, min(high, map(pow(val / 255.0, 0.6666), 0, 1, low, high)));
+  return max(low, min(high, map(pow(val / 512.0, 0.6666), 0, 1, low, high)));
 }
 float setFaderValueLogarithmic(float val, int low, int high) {
-  return pow(map(val, -60, 12, 0, 127) / 127.0, 1.5) * 255.0;
+  return pow(map(val, -60, 12, 0, 127) / 127.0, 1.5) * 512.0;
 }
