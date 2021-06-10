@@ -1,9 +1,10 @@
-// FADER_8 VERSION 1.1
+// FADER_LIB VERSION 1.2
 
 // Ensure Board Type (Tools > Board Type) is set to Teensyduino Teensy 4.1
 #include <TeensyThreads.h>
 #include <NativeEthernet.h>
 #include <ResponsiveAnalogRead.h>
+#include <Bounce2.h>
 
 #define REST 0
 #define MOTOR 1
@@ -21,6 +22,7 @@ byte minMotorPower[8] = {170, 170, 170, 170, 170, 170, 170, 170};
 byte readPins[8] = {A9, A8, A7, A6, A5, A4, A3, A2};
 static byte MOTOR_PINS_A[8] = {0, 2, 4, 6, 8, 10, 24, 28};
 static byte MOTOR_PINS_B[8] = {1, 3, 5, 7, 9, 12, 25, 29};
+static byte BUTTON_PINS[16] = {11, 15, 40, 33, 13, 14, 39, 30, 36, 38, 31, 37, 32, 41, 26, 27};
 ResponsiveAnalogRead faders[8] = {
   ResponsiveAnalogRead(A9, true),
   ResponsiveAnalogRead(A8, true),
@@ -32,9 +34,11 @@ ResponsiveAnalogRead faders[8] = {
   ResponsiveAnalogRead(A2, true)
 };
 
+Bounce buttons[16];
+
 
 void faderLoop(){
-  for (byte i = 0; i < 8; i++) {
+  for (byte i = 0; i < FADER_COUNT; i++) {
     faders[i].update();
     int distanceFromTarget = target[i] - getUnsafeFaderValue(i);
 
@@ -63,7 +67,7 @@ void faderLoop(){
 
     if (mode[i] == MOTOR) {
       faders[i].disableSleep();
-      byte motorSpeed =  min(MOTOR_MAX_SPEED, minMotorPower[i] + abs(distanceFromTarget / (RANGE/32)));
+      byte motorSpeed =  min(MOTOR_MAX_SPEED, minMotorPower[i] +abs(distanceFromTarget / (RANGE/32)));
 
       if (abs(distanceFromTarget) < RANGE/64) {
         analogWrite(MOTOR_PINS_A[i], 255);
@@ -110,10 +114,21 @@ void faderLoop(){
   }
 }
 
+void buttonLoop(){
+
+  for(byte i=0; i<16; i++){
+    buttons[i].update();
+    if(buttons[i].fell()){
+      usbMIDI.sendNoteOn(i, 127, 15);
+    }
+  }
+  
+}
+
 byte networkThreadID = 0;
 void faderSetup() {
   
-  for (byte i = 0; i < 8; i++) {
+  for (byte i = 0; i < FADER_COUNT; i++) {
     pinMode(MOTOR_PINS_A[i], OUTPUT);
     pinMode(MOTOR_PINS_B[i], OUTPUT);
     digitalWrite(MOTOR_PINS_A[i], LOW);
@@ -125,10 +140,12 @@ void faderSetup() {
   
   delay(2000);
   
-  Serial.println("########  FADER_8  ########");
+  Serial.print("########  FADER_");
+  Serial.print(FADER_COUNT);
+  Serial.println("########");
   Serial.println("Calibrating Faders...");
 
-  for(byte i=0; i<8; i++){
+  for(byte i=0; i<FADER_COUNT; i++){
     faders[i].disableSleep();
     faders[i].update();
     int initial = getFaderValue(i);
@@ -147,6 +164,7 @@ void faderSetup() {
       delay(10);
     }
     faders[i].enableSleep();
+    minMotorPower[i]++;
     analogWrite(MOTOR_PINS_A[i], 0);
     analogWrite(MOTOR_PINS_B[i], 0);
     Serial.print(minMotorPower[i]);
@@ -156,6 +174,18 @@ void faderSetup() {
   
   Serial.println("Starting Network Thread...");
   networkThreadID = threads.addThread(networkInit);
+}
+
+void buttonSetup() {
+
+  for(byte i=0; i<16; i++){
+    pinMode(BUTTON_PINS[i], INPUT_PULLUP);
+    buttons[i].attach(BUTTON_PINS[i]);
+    buttons[i].interval(5);
+  }
+
+  
+  
 }
 
 
@@ -199,4 +229,7 @@ int getFaderValue(byte fader) {
 }
 int getUnsafeFaderValue(byte fader){
   return map(faders[fader].getValue(), faderTrimBottom[fader], faderTrimTop[fader], 0, RANGE-1);
+}
+boolean getButtonFell(byte b){
+  return buttons[b].fell();
 }

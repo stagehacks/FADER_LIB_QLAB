@@ -13,8 +13,10 @@ byte MAC_ADDRESS[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 int IP_ADDRESS[] = {192, 168, 1, 130};
 int QLAB_ADDRESS[] = {192, 168, 1, 120};
 
-#define DEBUG false
+#define FADER_COUNT 4
+#define BUTTONS_ENABLED false
 
+#define DEBUG false
 
 
 #include <NativeEthernetUdp.h>
@@ -30,6 +32,11 @@ uint8_t packetBuffer[UDP_TX_PACKET_MAX_SIZE];
 int packetSize = 0;
 IPAddress DESTINATION_IP(QLAB_ADDRESS[0], QLAB_ADDRESS[1], QLAB_ADDRESS[2], QLAB_ADDRESS[3]);
 
+#define ENCODER_OPTIMIZE_INTERRUPTS
+#include <Encoder.h>
+Encoder enc(27, 26);
+elapsedMillis sinceEncoder = 0;
+int encoderPos = 0;
 
 void loop() {
   if (getEthernetStatus() != 0) {
@@ -48,12 +55,45 @@ void loop() {
     }
   }
   faderLoop();
+
+  if(BUTTONS_ENABLED){  
+    buttonLoop();
+
+    if(getButtonFell(14)){
+      sinceEncoder = 0;
+      if(enc.read()>0){
+        encoderPos = enc.read();
+      }else{
+        enc.write(0);
+        encoderPos = 0;
+      }
+
+      if (getEthernetStatus() != 0) {
+        OSCMessage outMsg("/cue/selected/loadAt");
+        outMsg.add((int32_t) encoderPos/4);
+        Serial.println(encoderPos);
+        Udp.beginPacket(DESTINATION_IP, 53000);
+        outMsg.send(Udp);
+        Udp.endPacket();
+      }
+      
+    }
+
+    if(sinceEncoder>3000){
+      encoderPos = 0;
+      enc.write(0);
+    }
+  }
 }
 
 void setup() {
   Serial.begin(9600);
   delay(1500);
   faderSetup();
+
+  if(BUTTONS_ENABLED){
+    buttonSetup();
+  }
 }
 
 void ethernetSetup(){
@@ -61,9 +101,7 @@ void ethernetSetup(){
 }
 
 void faderHasMoved(byte i) {
-  Serial.print("Fader ");
-  Serial.print(i);
-  Serial.println(" has been moved.");
+
   if (getEthernetStatus() != 0) {
     float faderValueLog = getFaderValueLogarithmic(getFaderValue(i), QLAB_MIN_VOLUME, QLAB_MAX_VOLUME);
     char addr[] = "/cue/selected/level/0/x";
