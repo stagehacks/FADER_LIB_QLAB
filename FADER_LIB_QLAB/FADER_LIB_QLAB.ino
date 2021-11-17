@@ -13,7 +13,7 @@ byte MAC_ADDRESS[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 int IP_ADDRESS[] = {192, 168, 1, 130};
 int QLAB_ADDRESS[] = {192, 168, 1, 120};
 
-#define FADER_COUNT 4
+#define FADER_COUNT 8
 #define BUTTONS_ENABLED false
 
 #define DEBUG false

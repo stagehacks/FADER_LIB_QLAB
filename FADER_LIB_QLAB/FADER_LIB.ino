@@ -1,4 +1,4 @@
-// FADER_LIB VERSION 1.2
+// FADER_LIB VERSION 1.3
 
 // Ensure Board Type (Tools > Board Type) is set to Teensyduino Teensy 4.1
 #include <TeensyThreads.h>
@@ -18,7 +18,13 @@ int lastSentValue[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 int target[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte mode[8] = {1, 1, 1, 1, 1, 1, 1, 1};
 int previous[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-byte minMotorPower[8] = {170, 170, 170, 170, 170, 170, 170, 170};
+
+
+// Default motor power for early 2021 faders = 170
+// Default motor power for late 2021 faders = 174
+byte minMotorPower[8] = {174, 174, 174, 174, 174, 174, 174, 174};
+
+
 byte readPins[8] = {A9, A8, A7, A6, A5, A4, A3, A2};
 static byte MOTOR_PINS_A[8] = {0, 2, 4, 6, 8, 10, 24, 28};
 static byte MOTOR_PINS_B[8] = {1, 3, 5, 7, 9, 12, 25, 29};
@@ -67,7 +73,7 @@ void faderLoop(){
 
     if (mode[i] == MOTOR) {
       faders[i].disableSleep();
-      byte motorSpeed =  min(MOTOR_MAX_SPEED, minMotorPower[i] +abs(distanceFromTarget / (RANGE/32)));
+      byte motorSpeed =  min(MOTOR_MAX_SPEED, minMotorPower[i] + abs(distanceFromTarget / (RANGE/32)));
 
       if (abs(distanceFromTarget) < RANGE/64) {
         analogWrite(MOTOR_PINS_A[i], 255);
