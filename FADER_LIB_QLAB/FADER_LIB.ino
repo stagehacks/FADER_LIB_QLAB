@@ -1,10 +1,17 @@
-// FADER_LIB VERSION 1.3
+// FADER_LIB VERSION 1.4
 
-// Ensure Board Type (Tools > Board Type) is set to Teensyduino Teensy 4.1
-#include <TeensyThreads.h>
+// Pins for Main Board version 1.0-1.3
+//static byte MOTOR_PINS_A[8] = {0, 2, 4, 6, 8, 10, 24, 28};
+//static byte MOTOR_PINS_B[8] = {1, 3, 5, 7, 9, 12, 25, 29};
+
+// Pins for Main Board version 1.4+
+static byte MOTOR_PINS_A[8] = {1, 2, 5, 6, 9, 10, 36, 28};
+static byte MOTOR_PINS_B[8] = {0, 3, 4, 7, 8, 12, 37, 29};
+
+
+#include <TeensyThreads.h> // Ensure Board Type (Tools > Board Type) is set to Teensyduino / Teensy 4.1
 #include <NativeEthernet.h>
 #include <ResponsiveAnalogRead.h>
-#include <Bounce2.h>
 
 #define REST 0
 #define MOTOR 1
@@ -14,21 +21,14 @@
 elapsedMillis sinceBegin = 0;
 elapsedMillis sinceMoved[8];
 elapsedMillis sinceSent[8];
+byte minMotorPower[8] = {MOTOR_MIN_SPEED, MOTOR_MIN_SPEED, MOTOR_MIN_SPEED, MOTOR_MIN_SPEED, MOTOR_MIN_SPEED, MOTOR_MIN_SPEED, MOTOR_MIN_SPEED, MOTOR_MIN_SPEED};
+int motorFrequency = MOTOR_FREQUENCY;
 int lastSentValue[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 int target[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 byte mode[8] = {1, 1, 1, 1, 1, 1, 1, 1};
 int previous[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-
-// Default motor power for early 2021 faders = 170
-// Default motor power for late 2021 faders = 174
-byte minMotorPower[8] = {174, 174, 174, 174, 174, 174, 174, 174};
-
-
 byte readPins[8] = {A9, A8, A7, A6, A5, A4, A3, A2};
-static byte MOTOR_PINS_A[8] = {0, 2, 4, 6, 8, 10, 24, 28};
-static byte MOTOR_PINS_B[8] = {1, 3, 5, 7, 9, 12, 25, 29};
-static byte BUTTON_PINS[16] = {11, 15, 40, 33, 13, 14, 39, 30, 36, 38, 31, 37, 32, 41, 26, 27};
 ResponsiveAnalogRead faders[8] = {
   ResponsiveAnalogRead(A9, true),
   ResponsiveAnalogRead(A8, true),
@@ -40,7 +40,6 @@ ResponsiveAnalogRead faders[8] = {
   ResponsiveAnalogRead(A2, true)
 };
 
-Bounce buttons[16];
 
 
 void faderLoop(){
@@ -97,8 +96,8 @@ void faderLoop(){
 
     } else {
       faders[i].enableSleep();
-      analogWrite(MOTOR_PINS_A[i], 255);
-      analogWrite(MOTOR_PINS_B[i], 255);
+      analogWrite(MOTOR_PINS_A[i], 0);
+      analogWrite(MOTOR_PINS_B[i], 0);
     }
     if (DEBUG) {
       if(mode[i]==MOTOR){
@@ -120,16 +119,6 @@ void faderLoop(){
   }
 }
 
-void buttonLoop(){
-
-  for(byte i=0; i<16; i++){
-    buttons[i].update();
-    if(buttons[i].fell()){
-      usbMIDI.sendNoteOn(i, 127, 15);
-    }
-  }
-  
-}
 
 byte networkThreadID = 0;
 void faderSetup() {
@@ -139,24 +128,29 @@ void faderSetup() {
     pinMode(MOTOR_PINS_B[i], OUTPUT);
     digitalWrite(MOTOR_PINS_A[i], LOW);
     digitalWrite(MOTOR_PINS_B[i], LOW);
-    analogWriteFrequency(MOTOR_PINS_A[i], 18000);
-    analogWriteFrequency(MOTOR_PINS_B[i], 18000);
+    analogWriteFrequency(MOTOR_PINS_A[i], motorFrequency);
+    analogWriteFrequency(MOTOR_PINS_B[i], motorFrequency);
     faders[i].setActivityThreshold(TOUCH_THRESHOLD);
   }
   
   delay(2000);
+
+  pinMode(LED_BUILTIN, OUTPUT);
   
   Serial.print("########  FADER_");
   Serial.print(FADER_COUNT);
-  Serial.println("########");
+  Serial.println(" ########");
   Serial.println("Calibrating Faders...");
 
   for(byte i=0; i<FADER_COUNT; i++){
     faders[i].disableSleep();
     faders[i].update();
     int initial = getFaderValue(i);
+
+    digitalWrite(LED_BUILTIN, !(i%2));
     
-    while(abs(getFaderValue(i)-initial)<RANGE/64){
+    while(abs(getFaderValue(i)-initial)<RANGE/32){
+      Serial.println(getFaderValue(i));
       faders[i].update();
       minMotorPower[i]++;
       if(initial<RANGE/2){
@@ -170,7 +164,7 @@ void faderSetup() {
       delay(10);
     }
     faders[i].enableSleep();
-    minMotorPower[i]++;
+    //minMotorPower[i]+=2;
     analogWrite(MOTOR_PINS_A[i], 0);
     analogWrite(MOTOR_PINS_B[i], 0);
     Serial.print(minMotorPower[i]);
@@ -180,18 +174,6 @@ void faderSetup() {
   
   Serial.println("Starting Network Thread...");
   networkThreadID = threads.addThread(networkInit);
-}
-
-void buttonSetup() {
-
-  for(byte i=0; i<16; i++){
-    pinMode(BUTTON_PINS[i], INPUT_PULLUP);
-    buttons[i].attach(BUTTON_PINS[i]);
-    buttons[i].interval(5);
-  }
-
-  
-  
 }
 
 
@@ -235,7 +217,4 @@ int getFaderValue(byte fader) {
 }
 int getUnsafeFaderValue(byte fader){
   return map(faders[fader].getValue(), faderTrimBottom[fader], faderTrimTop[fader], 0, RANGE-1);
-}
-boolean getButtonFell(byte b){
-  return buttons[b].fell();
 }

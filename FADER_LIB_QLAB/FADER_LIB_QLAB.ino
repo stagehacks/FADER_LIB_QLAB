@@ -1,12 +1,22 @@
 // FADER TRIM SETTINGS
 #define TOP 960
 #define BOT 70
-int faderTrimTop[8] = {TOP, TOP, TOP, TOP, TOP, TOP, TOP, TOP}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 511 AT THE TOP OF ITS TRAVEL
+int faderTrimTop[8] = {TOP, TOP, TOP, TOP, TOP, TOP, TOP, TOP}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 255 AT THE TOP OF ITS TRAVEL
 int faderTrimBottom[8] = {BOT, BOT, BOT, BOT, BOT, BOT, BOT, BOT}; // ADJUST THIS IF A SINGLE FADER ISN'T READING 0 AT THE BOTTOM OF ITS TRAVEL
 
 // MOTOR SETTINGS
 #define MOTOR_MAX_SPEED 210
-#define TOUCH_THRESHOLD 16
+
+// Default MIN_SPEED for Main Board version 1.0-1.2 = 170
+// Default MIN_SPEED for Main Board version 1.3 = 190
+// Default MIN_SPEED for Main Board version 1.4 = 145
+#define MOTOR_MIN_SPEED 140
+
+// Default MOTOR_FREQUENCY for 1.0-1.3 = 18000
+// Default MOTOR_FREQUENCY for 1.4+ = 256
+#define MOTOR_FREQUENCY 256
+
+#define TOUCH_THRESHOLD 20
 
 // ETHERNET SETTINGS
 byte MAC_ADDRESS[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
@@ -56,34 +66,6 @@ void loop() {
   }
   faderLoop();
 
-  if(BUTTONS_ENABLED){  
-    buttonLoop();
-
-    if(getButtonFell(14)){
-      sinceEncoder = 0;
-      if(enc.read()>0){
-        encoderPos = enc.read();
-      }else{
-        enc.write(0);
-        encoderPos = 0;
-      }
-
-      if (getEthernetStatus() != 0) {
-        OSCMessage outMsg("/cue/selected/loadAt");
-        outMsg.add((int32_t) encoderPos/4);
-        Serial.println(encoderPos);
-        Udp.beginPacket(DESTINATION_IP, 53000);
-        outMsg.send(Udp);
-        Udp.endPacket();
-      }
-      
-    }
-
-    if(sinceEncoder>3000){
-      encoderPos = 0;
-      enc.write(0);
-    }
-  }
 }
 
 void setup() {
@@ -91,9 +73,6 @@ void setup() {
   delay(1500);
   faderSetup();
 
-  if(BUTTONS_ENABLED){
-    buttonSetup();
-  }
 }
 
 void ethernetSetup(){
